@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>天使おじさん ボスバトル</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #121212;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            width: 90vw;
+            max-width: 1000px;
+            aspect-ratio: 16 / 9;
+            box-shadow: 0 0 30px rgba(0,0,0,0.9);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #333;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background-color: #1e1e1e;
+        }
+
+        .ui-panel {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .bar-container {
+            background: rgba(0, 0, 0, 0.75);
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.2);
+            backdrop-filter: blur(4px);
+        }
+
+        .bar-label {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .bar-bg {
+            width: 100%;
+            height: 18px;
+            background-color: #333;
+            border-radius: 9px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            transition: width 0.2s ease-out;
+        }
+
+        #boss-hp-fill {
+            background: linear-gradient(90deg, #ff4e50, #f9d423);
+        }
+
+        #player-hp-fill {
+            background: linear-gradient(90deg, #00b4db, #0083b0);
+        }
+
+        #controls-info {
+            margin-top: 15px;
+            font-size: 15px;
+            color: #ddd;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 20px;
+            border-radius: 20px;
+        }
+
+        #game-over-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.88);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+
+        #game-over-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #game-over-title {
+            font-size: 42px;
+            font-weight: bold;
+            margin-bottom: 25px;
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+        }
+
+        #restart-btn {
+            padding: 12px 32px;
+            font-size: 20px;
+            font-weight: bold;
+            background-color: #ff4757;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+            transition: transform 0.1s, background-color 0.2s;
+        }
+
+        #restart-btn:hover {
+            background-color: #ff6b81;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="960" height="540"></canvas>
+    
+    <div class="ui-panel">
+        <div class="bar-container">
+            <div class="bar-label">
+                <span id="boss-name">BOSS: 街角の天使おじさん (第1形態)</span>
+                <span id="boss-hp-text">300 / 300</span>
+            </div>
+            <div class="bar-bg">
+                <div id="boss-hp-fill" class="bar-fill" style="width: 100%;"></div>
+            </div>
+        </div>
+
+        <div class="bar-container" style="width: 300px;">
+            <div class="bar-label">
+                <span>PLAYER HP</span>
+                <span id="player-hp-text">100 / 100</span>
+            </div>
+            <div class="bar-bg">
+                <div id="player-hp-fill" class="bar-fill" style="width: 100%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-over-overlay">
+        <div id="game-over-title">GAME OVER</div>
+        <button id="restart-btn" onclick="restartGame()">もう一度挑戦する</button>
+    </div>
+</div>
+
+<div id="controls-info">
+    移動: [A][D] / [←][→] | ジャンプ: [W] / [↑] / [Space] | 攻撃: [J] / [マウスクリック]
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// 画像データの定義 (Base64または絶対パス)
+const imgSources = [
+    'image.png',   // 第1形態
+    'image_2.png', // 第2形態
+    'image_3.png'  // 第3形態
+];
+
+const bossImages = [];
+let loadedImages = 0;
+
+imgSources.forEach((src, index) => {
+    const img = new Image();
+    img.src = src;
+    img.onload = () => {
+        loadedImages++;
+        if (loadedImages === imgSources.length) {
+            initGame();
+        }
+    };
+    bossImages[index] = img;
+});
+
+let gameState = 'PLAYING';
+
+const player = {
+    x: 120,
+    y: 420,
+    width: 36,
+    height: 48,
+    color: '#00d2d3',
+    vx: 0,
+    vy: 0,
+    speed: 6,
+    jumpPower: -13,
+    isGrounded: false,
+    hp: 100,
+    maxHp: 100,
+    lastShootTime: 0,
+    shootCooldown: 180
+};
+
+const boss = {
+    x: 680,
+    y: 180,
+    width: 240,
+    height: 180,
+    maxHp: 300,
+    hp: 300,
+    phase: 0,
+    attackTimer: 0,
+    floatOffset: 0
+};
+
+let playerBullets = [];
+let bossBullets = [];
+let particles = [];
+
+const keys = {};
+window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if ((e.key === 'j' || e.key === 'J') && gameState === 'PLAYING') {
+        shootPlayerBullet();
+    }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+canvas.addEventListener('mousedown', () => {
+    if (gameState === 'PLAYING') shootPlayerBullet();
+});
+
+function shootPlayerBullet() {
+    const now = Date.now();
+    if (now - player.lastShootTime < player.shootCooldown) return;
+    player.lastShootTime = now;
+
+    const targetX = boss.x + boss.width / 2;
+    const targetY = boss.y + boss.height / 2;
+    const originX = player.x + player.width / 2;
+    const originY = player.y + player.height / 2;
+
+    const angle = Math.atan2(targetY - originY, targetX - originX);
+    const speed = 12;
+
+    playerBullets.push({
+        x: originX,
+        y: originY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        radius: 7,
+        color: '#ffda79'
+    });
+}
+
+function initGame() {
+    player.hp = player.maxHp;
+    player.x = 120;
+    player.y = 420;
+    boss.hp = boss.maxHp;
+    boss.phase = 0;
+    playerBullets = [];
+    bossBullets = [];
+    particles = [];
+    gameState = 'PLAYING';
+
+    document.getElementById('game-over-overlay').classList.remove('active');
+    updateUI();
+    requestAnimationFrame(gameLoop);
+}
+
+function restartGame() {
+    initGame();
+}
+
+function gameLoop() {
+    update();
+    render();
+
+    if (gameState === 'PLAYING') {
+        requestAnimationFrame(gameLoop);
+    }
+}
+
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    if (keys['a'] || keys['A'] || keys['ArrowLeft']) player.vx = -player.speed;
+    else if (keys['d'] || keys['D'] || keys['ArrowRight']) player.vx = player.speed;
+    else player.vx = 0;
+
+    if ((keys['w'] || keys['W'] || keys['ArrowUp'] || keys[' ']) && player.isGrounded) {
+        player.vy = player.jumpPower;
+        player.isGrounded = false;
+    }
+
+    player.vy += 0.65;
+    player.x += player.vx;
+    player.y += player.vy;
+
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+    
+    const groundY = 460;
+    if (player.y + player.height >= groundY) {
+        player.y = groundY - player.height;
+        player.vy = 0;
+        player.isGrounded = true;
+    }
+
+    const hpRatio = boss.hp / boss.maxHp;
+    if (hpRatio > 0.66) {
+        boss.phase = 0; // 第1形態[cite: 1]
+    } else if (hpRatio > 0.33) {
+        boss.phase = 1; // 第2形態[cite: 2]
+    } else {
+        boss.phase = 2; // 第3形態[cite: 3]
+    }
+
+    boss.floatOffset += 0.05;
+    const floatY = Math.sin(boss.floatOffset) * (12 + boss.phase * 6);
+    const currentBossY = boss.y + floatY;
+
+    boss.attackTimer++;
+    handleBossAttacks(currentBossY);
+
+    for (let i = playerBullets.length - 1; i >= 0; i--) {
+        const b = playerBullets[i];
+        b.x += b.vx;
+        b.y += b.vy;
+
+        if (b.x > boss.x && b.x < boss.x + boss.width &&
+            b.y > currentBossY && b.y < currentBossY + boss.height) {
+            
+            boss.hp -= 5;
+            if (boss.hp < 0) boss.hp = 0;
+            createHitParticles(b.x, b.y, '#ffd166');
+            playerBullets.splice(i, 1);
+            updateUI();
+
+            if (boss.hp <= 0) {
+                gameState = 'VICTORY';
+                showGameOver('VICTORY! 撃破完了！');
+            }
+            continue;
+        }
+
+        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+            playerBullets.splice(i, 1);
+        }
+    }
+
+    for (let i = bossBullets.length - 1; i >= 0; i--) {
+        const b = bossBullets[i];
+        b.x += b.vx;
+        b.y += b.vy;
+
+        if (b.x > player.x && b.x < player.x + player.width &&
+            b.y > player.y && b.y < player.y + player.height) {
+            
+            player.hp -= b.damage || 10;
+            if (player.hp < 0) player.hp = 0;
+            createHitParticles(b.x, b.y, '#ff4757');
+            bossBullets.splice(i, 1);
+            updateUI();
+
+            if (player.hp <= 0) {
+                gameState = 'GAME_OVER';
+                showGameOver('GAME OVER');
+            }
+            continue;
+        }
+
+        if (b.x < -20 || b.x > canvas.width + 20 || b.y < -20 || b.y > canvas.height + 20) {
+            bossBullets.splice(i, 1);
+        }
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.05;
+        if (p.life <= 0) particles.splice(i, 1);
+    }
+}
+
+function handleBossAttacks(bossY) {
+    if (boss.phase === 0) {
+        if (boss.attackTimer % 80 === 0) {
+            bossBullets.push({
+                x: boss.x,
+                y: bossY + boss.height / 2,
+                vx: -5,
+                vy: (Math.random() - 0.5) * 3,
+                radius: 8,
+                color: '#aaa',
+                damage: 8
+            });
+        }
+    } else if (boss.phase === 1) {
+        if (boss.attackTimer % 60 === 0) {
+            for (let angle = -0.4; angle <= 0.4; angle += 0.2) {
+                bossBullets.push({
+                    x: boss.x,
+                    y: bossY + boss.height / 2,
+                    vx: Math.cos(Math.PI + angle) * 6,
+                    vy: Math.sin(angle) * 6,
+                    radius: 8,
+                    color: '#f1c40f',
+                    damage: 10
+                });
+            }
+        }
+    } else if (boss.phase === 2) {
+        if (boss.attackTimer % 35 === 0) {
+            const targetAngle = Math.atan2(
+                (player.y + player.height / 2) - (bossY + boss.height / 2),
+                (player.x + player.width / 2) - boss.x
+            );
+            bossBullets.push({
+                x: boss.x,
+                y: bossY + boss.height / 2,
+                vx: Math.cos(targetAngle) * 8,
+                vy: Math.sin(targetAngle) * 8,
+                radius: 10,
+                color: '#8e44ad',
+                damage: 12
+            });
+        }
+    }
+}
+
+function createHitParticles(x, y, color) {
+    for (let i = 0; i < 8; i++) {
+        particles.push({
+            x: x,
+            y: y,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6,
+            life: 1.0,
+            color: color
+        });
+    }
+}
+
+function updateUI() {
+    const bossHpPct = Math.max(0, (boss.hp / boss.maxHp) * 100);
+    const playerHpPct = Math.max(0, (player.hp / player.maxHp) * 100);
+
+    document.getElementById('boss-hp-fill').style.width = `${bossHpPct}%`;
+    document.getElementById('boss-hp-text').innerText = `${Math.ceil(boss.hp)} / ${boss.maxHp}`;
+
+    document.getElementById('player-hp-fill').style.width = `${playerHpPct}%`;
+    document.getElementById('player-hp-text').innerText = `${Math.ceil(player.hp)} / ${player.maxHp}`;
+
+    const names = [
+        'BOSS: 街角の天使おじさん (第1形態)', //[cite: 1]
+        'BOSS: 歓喜の飛翔おじさん (第2形態)', //[cite: 2]
+        'BOSS: 漆黒の覚醒おじさん (第3形態)'  //[cite: 3]
+    ];
+    document.getElementById('boss-name').innerText = names[boss.phase];
+}
+
+function showGameOver(text) {
+    document.getElementById('game-over-title').innerText = text;
+    document.getElementById('game-over-overlay').classList.add('active');
+}
+
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#181818';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#2d3436';
+    ctx.fillRect(0, 460, canvas.width, 80);
+    ctx.fillStyle = '#00b894';
+    ctx.fillRect(0, 460, canvas.width, 5);
+
+    const currentImg = bossImages[boss.phase];
+    const floatY = Math.sin(boss.floatOffset) * (12 + boss.phase * 6);
+    if (currentImg) {
+        ctx.drawImage(currentImg, boss.x, boss.y + floatY, boss.width, boss.height);
+    }
+
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(player.x + 24, player.y + 10, 8, 8);
+
+    playerBullets.forEach(b => {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        ctx.fillStyle = b.color;
+        ctx.fill();
+    });
+
+    bossBullets.forEach(b => {
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+        ctx.fillStyle = b.color;
+        ctx.fill();
+    });
+
+    particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.fillRect(p.x, p.y, 4, 4);
+        ctx.globalAlpha = 1.0;
+    });
+}
+</script>
+</body>
+</html>
